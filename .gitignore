@@ -1,0 +1,52 @@
+# =========================
+# 1. SECRETS & CREDENTIALS (CRITICAL)
+# =========================
+# Never commit your environment variables to Git!
+.env
+.env.*
+*.pem
+
+# =========================
+# 2. NODE DEPENDENCIES
+# =========================
+# Ignore node_modules in both the root (if any) and subdirectories
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# =========================
+# 3. BUILD ARTIFACTS (FRONTEND)
+# =========================
+# Ignore Vite/React build outputs
+frontend/dist/
+frontend/build/
+
+# =========================
+# 4. USER UPLOADS & LOCAL DATA (BACKEND)
+# =========================
+# Ignore the local file system uploads we used for the volume tests
+backend/uploads/
+# Ignore local database dumps or mounted volume data (if you ever map pgdata locally)
+pgdata/
+*.sql
+
+# =========================
+# 5. OS & EDITOR FILES
+# =========================
+# Mac/Windows system files
+.DS_Store
+Thumbs.db
+
+# IDE/Editor specific folders
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+
+# =========================
+# 6. DOCKER
+# =========================
+# Note: You already have .dockerignore files, but this ensures 
+# local Docker debug logs or temporary builds don't get committed.
+.docker/
