@@ -106,7 +106,7 @@ function App() {
           Data Persistence Hub
         </h1>
         <p className="text-slate-500 text-lg">
-          Testing Docker Volumes via Postgres & Container Storage
+         Learning Docker volumes with a practical file upload/download.
         </p>
       </header>
 
