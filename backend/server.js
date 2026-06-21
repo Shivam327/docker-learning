@@ -43,12 +43,11 @@ dbClient
       )
     `);
 
-    // 2. Add the 'type' column if it's missing (Safe Migration)
+    // 2.(Safe Migration)
     try {
       await dbClient.query(
         `ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'local'`,
       );
-      console.log("✅ Database schema is up to date (column 'type' verified).");
     } catch (err) {
       console.error("❌ Migration error:", err.message);
     }

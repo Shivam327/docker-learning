@@ -66,7 +66,7 @@ function App() {
     setIsUploading(false);
   };
 
-  const handleDownload = async (filename) => {
+  const handleDownload = async (filename, storageType) => {
     setFeedback({ type: "", message: "" });
 
     try {
@@ -299,7 +299,9 @@ function App() {
                     </div>
 
                     <button
-                      onClick={() => handleDownload(record.filename)}
+                      onClick={() =>
+                        handleDownload(record.filename, record.type)
+                      }
                       className="text-sm px-4 py-2 bg-white border border-slate-200 shadow-sm text-slate-600 rounded-md hover:bg-slate-50 hover:text-blue-600 transition-colors flex items-center gap-1 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100"
                     >
                       <Download className="w-4 h-4" />
