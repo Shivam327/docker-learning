@@ -271,14 +271,28 @@ function App() {
                     key={record.id}
                     className="p-4 hover:bg-slate-100 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
                   >
-                    {/* Updated File Info (ID + Name + Date) */}
+                    {/* Updated File Info (ID + Name + Type Badge + Date) */}
                     <div className="flex flex-col min-w-0">
-                      <span className="font-semibold text-slate-700 truncate">
-                        <span className="text-slate-400 mr-2">
-                          #{record.id}
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-slate-700 truncate">
+                          <span className="text-slate-400 mr-2">
+                            #{record.id}
+                          </span>
+                          {record.filename}
                         </span>
-                        {record.filename}
-                      </span>
+
+                        {/* Type Badge */}
+                        <span
+                          className={`text-[10px] uppercase px-1.5 py-0.5 rounded-full font-bold border ${
+                            record.type === "s3"
+                              ? "bg-blue-50 text-blue-600 border-blue-200"
+                              : "bg-emerald-50 text-emerald-600 border-emerald-200"
+                          }`}
+                        >
+                          {record.type}
+                        </span>
+                      </div>
+
                       <span className="text-xs text-slate-400 mt-1">
                         Uploaded: {new Date(record.created_at).toLocaleString()}
                       </span>

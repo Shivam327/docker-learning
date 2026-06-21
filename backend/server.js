@@ -32,17 +32,28 @@ dbClient
   .connect()
   .then(async () => {
     console.log("✅ Connected successfully to Postgres!");
+
+    // 1. Create table if it doesn't exist
     await dbClient.query(`
       CREATE TABLE IF NOT EXISTS uploaded_files (
-        id SERIAL PRIMARY KEY,
-        filename TEXT NOT NULL,
-        type TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          id SERIAL PRIMARY KEY,
+          filename TEXT NOT NULL,
+          type TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // 2. Add the 'type' column if it's missing (Safe Migration)
+    try {
+      await dbClient.query(
+        `ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'local'`,
+      );
+      console.log("✅ Database schema is up to date (column 'type' verified).");
+    } catch (err) {
+      console.error("❌ Migration error:", err.message);
+    }
   })
   .catch((err) => console.log("❌ Postgres Connection Failed:", err.message));
-
 // --- 2. STORAGE & S3 CONFIGURATION ---
 const uploadDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
