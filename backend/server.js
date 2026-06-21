@@ -11,6 +11,7 @@ const {
   ListObjectsV2Command,
   GetObjectCommand,
 } = require("@aws-sdk/client-s3");
+const { Upload } = require("@aws-sdk/lib-storage"); // Add this import at the top
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 
 const app = express();
@@ -42,7 +43,6 @@ dbClient
   })
   .catch((err) => console.log("❌ Postgres Connection Failed:", err.message));
 
-
 // --- 2. STORAGE & S3 CONFIGURATION ---
 const uploadDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -69,7 +69,10 @@ const initBucket = async () => {
     await s3Client.send(new CreateBucketCommand({ Bucket: bucketName }));
     console.log(`✅ S3 Bucket '${bucketName}' created successfully.`);
   } catch (err) {
-    if (err.name === "BucketAlreadyOwnedByYou" || err.name === "BucketAlreadyExists") {
+    if (
+      err.name === "BucketAlreadyOwnedByYou" ||
+      err.name === "BucketAlreadyExists"
+    ) {
       console.log(`✅ S3 Bucket '${bucketName}' is ready.`);
     } else {
       console.log(`❌ Failed to create S3 bucket:`, err.message);
@@ -77,7 +80,6 @@ const initBucket = async () => {
   }
 };
 initBucket();
-
 
 // --- 3. API ROUTES ---
 
@@ -87,37 +89,39 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
 
   try {
     const fileName = req.file.originalname;
-    
-    // Safely check headers first, fallback to body, then default to 'local'
-    const activeStorageType = req.headers['x-storage-type'] || req.body.storageType || "local";
+    const activeStorageType =
+      req.headers["x-storage-type"] || req.body.storageType || "local";
 
-    console.log(`📤 Upload Request for: ${fileName} (Destination: ${activeStorageType})`);
+    console.log(`📤 Uploading: ${fileName} to ${activeStorageType}`);
 
     if (activeStorageType === "s3") {
-      // S3 Path: Send buffer directly to MinIO
-      await s3Client.send(
-        new PutObjectCommand({
+      // Use the Upload class for robust S3 interactions
+      const parallelUpload = new Upload({
+        client: s3Client,
+        params: {
           Bucket: bucketName,
           Key: fileName,
-          Body: req.file.buffer, // Because of memoryStorage, this is a valid Buffer!
+          Body: req.file.buffer, // Perfectly handles the MemoryStorage buffer
           ContentType: req.file.mimetype,
-        })
-      );
+        },
+      });
+
+      await parallelUpload.done();
     } else {
-      // Local Path: Manually write the buffer to the hard drive
+      // Local Path: Persist buffer to disk
       const filePath = path.join(uploadDir, fileName);
       await fs.promises.writeFile(filePath, req.file.buffer);
     }
 
-    // Database: Record BOTH the filename and the storage type
+    // Database Persistence
     await dbClient.query(
       "INSERT INTO uploaded_files (filename, type) VALUES ($1, $2)",
-      [fileName, activeStorageType]
+      [fileName, activeStorageType],
     );
 
-    res.json({ status: "File uploaded successfully!", mode: activeStorageType });
+    res.json({ status: "Success", mode: activeStorageType });
   } catch (err) {
-    console.error("Upload handler failed:", err);
+    console.error("Upload Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -125,7 +129,9 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
 // GET: List Files
 app.get("/api/files", async (req, res) => {
   try {
-    const result = await dbClient.query("SELECT * FROM uploaded_files ORDER BY created_at DESC");
+    const result = await dbClient.query(
+      "SELECT * FROM uploaded_files ORDER BY created_at DESC",
+    );
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -137,19 +143,31 @@ app.get("/api/download/:filename", async (req, res) => {
   const targetFile = req.params.filename;
   const activeStorageType = req.query.storageType || "local";
 
-  console.log(`📥 Download Request for: ${targetFile} (Source: ${activeStorageType})`);
+  console.log(
+    `📥 Download Request for: ${targetFile} (Source: ${activeStorageType})`,
+  );
 
   try {
     if (activeStorageType === "s3") {
-      console.log(`☁️ Streaming '${targetFile}' from S3 bucket '${bucketName}'...`);
-      
-      const response = await s3Client.send(new GetObjectCommand({
-        Bucket: bucketName,
-        Key: targetFile,
-      }));
+      console.log(
+        `☁️ Streaming '${targetFile}' from S3 bucket '${bucketName}'...`,
+      );
 
-      res.setHeader("Content-Type", response.ContentType || "application/octet-stream");
-      res.setHeader("Content-Disposition", `attachment; filename="${targetFile}"`);
+      const response = await s3Client.send(
+        new GetObjectCommand({
+          Bucket: bucketName,
+          Key: targetFile,
+        }),
+      );
+
+      res.setHeader(
+        "Content-Type",
+        response.ContentType || "application/octet-stream",
+      );
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${targetFile}"`,
+      );
       return response.Body.pipe(res);
     }
 
@@ -160,13 +178,15 @@ app.get("/api/download/:filename", async (req, res) => {
       return res.download(filePath);
     } else {
       console.log(`❌ File '${targetFile}' not found on local disk.`);
-      return res.status(404).json({ error: "File not found on local storage." });
+      return res
+        .status(404)
+        .json({ error: "File not found on local storage." });
     }
-
   } catch (err) {
     console.error("Download Error:", err.message);
     if (!res.headersSent) {
-      if (err.name === 'NoSuchKey') return res.status(404).json({ error: "File not found in S3." });
+      if (err.name === "NoSuchKey")
+        return res.status(404).json({ error: "File not found in S3." });
       return res.status(500).json({ error: "Could not retrieve file." });
     }
   }
@@ -185,10 +205,14 @@ app.delete("/api/reset", async (req, res) => {
     }
 
     // 3. Wipe MinIO/S3 Bucket
-    const listedObjects = await s3Client.send(new ListObjectsV2Command({ Bucket: bucketName }));
+    const listedObjects = await s3Client.send(
+      new ListObjectsV2Command({ Bucket: bucketName }),
+    );
     if (listedObjects.Contents) {
       for (const object of listedObjects.Contents) {
-        await s3Client.send(new DeleteObjectCommand({ Bucket: bucketName, Key: object.Key }));
+        await s3Client.send(
+          new DeleteObjectCommand({ Bucket: bucketName, Key: object.Key }),
+        );
       }
     }
 
