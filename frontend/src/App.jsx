@@ -70,7 +70,9 @@ function App() {
     setFeedback({ type: "", message: "" });
 
     try {
-      const res = await fetch(`/api/download/${filename}?storageType=${storageType}`);
+      const res = await fetch(
+        `/api/download/${filename}?storageType=${storageType}`,
+      );
 
       if (res.ok) {
         const blob = await res.blob();
@@ -162,44 +164,51 @@ function App() {
             This saves the physical file to the container's volume and writes a
             record of it to the Postgres database.
           </p>
-
           <div className="space-y-4">
-            {/* File Input */}
-            <input
-              id="file-input"
-              type="file"
-              onChange={(e) => setSelectedFile(e.target.files[0])}
-              className="block w-full text-sm text-slate-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition-colors cursor-pointer"
-            />
+            {/* Unified Upload Toolbar */}
+            <div className="flex flex-col md:flex-row items-center justify-between p-2 bg-slate-50 border border-slate-200 rounded-lg">
+              {/* Left Side: File Input */}
+              <div className="w-full md:w-auto flex-1 md:pr-2 p-2 bg-slate-50 border border-slate-200 rounded-lg">
+                <input
+                  id="file-input"
+                  type="file"
+                  onChange={(e) => setSelectedFile(e.target.files[0])}
+                  className="block w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-white file:text-blue-700 file:shadow-sm hover:file:bg-blue-50 transition-colors cursor-pointer focus:outline-none"
+                />
+              </div>
 
-            {/* Dynamic Storage Toggle Switch */}
-            <div className="flex items-center justify-between p-2 bg-slate-50 rounded-lg border border-slate-200">
-              <span className="text-xs font-semibold text-slate-600 ml-2">
-                Destination Storage:
-              </span>
-              <div className="inline-flex bg-slate-200 p-1 rounded-md patch-toggle">
-                <button
-                  type="button"
-                  onClick={() => setStorageType("local")}
-                  className={`px-3 py-1 text-xs font-bold rounded transition-all ${
-                    storageType === "local"
-                      ? "bg-white text-blue-700 shadow-sm"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  Local Disk
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStorageType("s3")}
-                  className={`px-3 py-1 text-xs font-bold rounded transition-all ${
-                    storageType === "s3"
-                      ? "bg-blue-600 text-white shadow-sm"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  Cloud S3
-                </button>
+              {/* The Divider (|) - Responsive */}
+              <div className="w-full md:w-px h-px md:h-8 bg-slate-200 md:bg-slate-300 my-2 md:my-0 md:mx-2"></div>
+
+              {/* Right Side: Storage Toggle */}
+              <div className="flex items-center justify-between md:justify-end gap-3 shrink-0 w-full md:w-auto md:pl-2 p-2 bg-slate-50 border border-slate-200 rounded-lg">
+                <span className="text-sm font-medium text-slate-600 pl-1 md:pl-0">
+                  Destination:
+                </span>
+                <div className="inline-flex bg-slate-200/70 p-1 rounded-md">
+                  <button
+                    type="button"
+                    onClick={() => setStorageType("local")}
+                    className={`px-4 py-1.5 text-xs font-bold rounded transition-all ${
+                      storageType === "local"
+                        ? "bg-white text-blue-700 shadow-sm"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Local Disk
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStorageType("s3")}
+                    className={`px-4 py-1.5 text-xs font-bold rounded transition-all ${
+                      storageType === "s3"
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Cloud S3
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -207,7 +216,7 @@ function App() {
             <button
               onClick={handleFileUpload}
               disabled={!selectedFile || isUploading}
-              className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-semibold rounded-lg transition-colors flex justify-center items-center gap-2"
+              className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors flex justify-center items-center gap-2 shadow-sm"
             >
               {isUploading ? (
                 <span className="animate-pulse">Uploading...</span>
