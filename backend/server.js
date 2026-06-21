@@ -1,130 +1,239 @@
-const express = require('express');
-const fs = require('fs');
-const path = require('path');
-const { Client } = require('pg');
-const multer = require('multer');
+const express = require("express");
+const fs = require("fs");
+const path = require("path");
+const { Client } = require("pg");
+const multer = require("multer");
+const {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand,
+  CreateBucketCommand,
+  ListObjectsV2Command,
+  GetObjectCommand,
+} = require("@aws-sdk/client-s3");
+const { Upload } = require("@aws-sdk/lib-storage"); // Add this import at the top
+const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 
 const app = express();
 app.use(express.json());
 
-const greetingMessage = process.env.GREETING_TEXT || 'Hello from Node! (No Env Var Set)';
+const bucketName = process.env.S3_BUCKET || "uploads";
 
 // --- 1. DATABASE SETUP ---
-// Using fallbacks ('||') so it works locally on Windows WITHOUT Docker too!
 const dbClient = new Client({
-  host: process.env.DB_HOST || 'localhost', 
-  user: process.env.DB_USER || 'demo_user',
-  password: process.env.DB_PASSWORD || 'super_secret_demo_password',
-  database: process.env.DB_NAME || 'demo_db',
-  port: process.env.DB_PORT || 5432,
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  port: process.env.DB_PORT,
 });
 
-let dbStatus = 'Connecting...';
-
-dbClient.connect()
+dbClient
+  .connect()
   .then(async () => {
-    dbStatus = 'Connected successfully to Postgres!';
-    
-    // Auto-create the table if it doesn't exist
+    console.log("✅ Connected successfully to Postgres!");
+
+    // 1. Create table if it doesn't exist
     await dbClient.query(`
       CREATE TABLE IF NOT EXISTS uploaded_files (
-        id SERIAL PRIMARY KEY,
-        filename TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          id SERIAL PRIMARY KEY,
+          filename TEXT NOT NULL,
+          type TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    console.log("Database table 'uploaded_files' is ready.");
+
+    // 2. Add the 'type' column if it's missing (Safe Migration)
+    try {
+      await dbClient.query(
+        `ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'local'`,
+      );
+      console.log("✅ Database schema is up to date (column 'type' verified).");
+    } catch (err) {
+      console.error("❌ Migration error:", err.message);
+    }
   })
-  .catch(err => {
-      dbStatus = 'Failed to connect to Postgres: ' + err.message;
-      console.log(dbStatus);
-  });
+  .catch((err) => console.log("❌ Postgres Connection Failed:", err.message));
+// --- 2. STORAGE & S3 CONFIGURATION ---
+const uploadDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
-// --- 2. FILE SYSTEM & MULTER SETUP ---
-// Using path.join makes this work on Windows (C:\) and Linux (/app/)
-const uploadDir = path.join(__dirname, 'uploads');
-
-// recursive: true prevents crashing if the folder already exists
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true }); 
-}
-
-// Configure multer to keep original file names
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) { cb(null, uploadDir) },
-  filename: function (req, file, cb) { cb(null, file.originalname) }
+// Always hold the file in RAM temporarily. The API route will decide where it goes.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
 });
 
-// Declare the upload middleware BEFORE the routes
-const upload = multer({ 
-    storage: storage,
-    limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit to prevent crashes
+const s3Client = new S3Client({
+  region: "us-east-1",
+  endpoint: process.env.S3_ENDPOINT,
+  credentials: {
+    accessKeyId: process.env.S3_ACCESS_KEY,
+    secretAccessKey: process.env.S3_SECRET_KEY,
+  },
+  forcePathStyle: true,
 });
 
+// Auto-create the bucket on startup
+const initBucket = async () => {
+  try {
+    await s3Client.send(new CreateBucketCommand({ Bucket: bucketName }));
+    console.log(`✅ S3 Bucket '${bucketName}' created successfully.`);
+  } catch (err) {
+    if (
+      err.name === "BucketAlreadyOwnedByYou" ||
+      err.name === "BucketAlreadyExists"
+    ) {
+      console.log(`✅ S3 Bucket '${bucketName}' is ready.`);
+    } else {
+      console.log(`❌ Failed to create S3 bucket:`, err.message);
+    }
+  }
+};
+initBucket();
 
 // --- 3. API ROUTES ---
 
-// GET: Server Status
-app.get('/api/greeting', (req, res) => {
-    res.json({ message: greetingMessage, db_status: dbStatus });
-});
+// POST: Upload File
+app.post("/api/upload", upload.single("file"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No file uploaded." });
 
-// POST: Upload File (Saves to disk AND saves record to Postgres)
-app.post('/api/upload', upload.single('file'), async (req, res) => {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded.' });
-    
-    try {
-        await dbClient.query('INSERT INTO uploaded_files (filename) VALUES ($1)', [req.file.originalname]);
-        res.json({ status: 'File uploaded to disk AND recorded in Database!' });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+  try {
+    const fileName = req.file.originalname;
+    const activeStorageType =
+      req.headers["x-storage-type"] || req.body.storageType || "local";
 
-// GET: List Files (Pulls records from Postgres, NOT the file system)
-app.get('/api/files', async (req, res) => {
-    try {
-        const result = await dbClient.query('SELECT * FROM uploaded_files ORDER BY created_at DESC');
-        res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+    console.log(`📤 Uploading: ${fileName} to ${activeStorageType}`);
 
-// GET: Download File (The "Broken Link" Trap)
-app.get('/api/download/:filename', (req, res) => {
-    // path.join safely builds the URL whether on Windows or Linux
-    const filePath = path.join(uploadDir, req.params.filename);
-    
-    // Check if the file actually exists on the hard drive
-    if (fs.existsSync(filePath)) {
-        res.download(filePath); // Success!
+    if (activeStorageType === "s3") {
+      // Use the Upload class for robust S3 interactions
+      const parallelUpload = new Upload({
+        client: s3Client,
+        params: {
+          Bucket: bucketName,
+          Key: fileName,
+          Body: req.file.buffer, // Perfectly handles the MemoryStorage buffer
+          ContentType: req.file.mimetype,
+        },
+      });
+
+      await parallelUpload.done();
     } else {
-        // The DB remembered the file, but the storage lost it!
-        res.status(404).json({ error: 'FILE NOT FOUND IN STORAGE. Ephemeral data was lost!' });
+      // Local Path: Persist buffer to disk
+      const filePath = path.join(uploadDir, fileName);
+      await fs.promises.writeFile(filePath, req.file.buffer);
     }
+
+    // Database Persistence
+    await dbClient.query(
+      "INSERT INTO uploaded_files (filename, type) VALUES ($1, $2)",
+      [fileName, activeStorageType],
+    );
+
+    res.json({ status: "Success", mode: activeStorageType });
+  } catch (err) {
+    console.error("Upload Error:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
+// GET: List Files
+app.get("/api/files", async (req, res) => {
+  try {
+    const result = await dbClient.query(
+      "SELECT * FROM uploaded_files ORDER BY created_at DESC",
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-// DELETE: Reset all data (Wipes DB and Container Storage)
-app.delete('/api/reset', async (req, res) => {
-    try {
-        // 1. Wipe the Database and reset the Serial IDs back to 1
-        await dbClient.query('TRUNCATE TABLE uploaded_files RESTART IDENTITY');
-        
-        // 2. Wipe the Container File System
-        const fsPromises = fs.promises;
-        const files = await fsPromises.readdir(uploadDir);
-        for (const file of files) {
-            await fsPromises.unlink(path.join(uploadDir, file));
-        }
-        
-        res.json({ message: 'All data completely wiped!' });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+// GET: Download / View File
+app.get("/api/download/:filename", async (req, res) => {
+  const targetFile = req.params.filename;
+  const activeStorageType = req.query.storageType || "local";
+
+  console.log(
+    `📥 Download Request for: ${targetFile} (Source: ${activeStorageType})`,
+  );
+
+  try {
+    if (activeStorageType === "s3") {
+      console.log(
+        `☁️ Streaming '${targetFile}' from S3 bucket '${bucketName}'...`,
+      );
+
+      const response = await s3Client.send(
+        new GetObjectCommand({
+          Bucket: bucketName,
+          Key: targetFile,
+        }),
+      );
+
+      res.setHeader(
+        "Content-Type",
+        response.ContentType || "application/octet-stream",
+      );
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${targetFile}"`,
+      );
+      return response.Body.pipe(res);
     }
+
+    // Local Download Logic
+    const filePath = path.join(uploadDir, targetFile);
+    if (fs.existsSync(filePath)) {
+      console.log(`📦 Streaming '${targetFile}' from Local Disk...`);
+      return res.download(filePath);
+    } else {
+      console.log(`❌ File '${targetFile}' not found on local disk.`);
+      return res
+        .status(404)
+        .json({ error: "File not found on local storage." });
+    }
+  } catch (err) {
+    console.error("Download Error:", err.message);
+    if (!res.headersSent) {
+      if (err.name === "NoSuchKey")
+        return res.status(404).json({ error: "File not found in S3." });
+      return res.status(500).json({ error: "Could not retrieve file." });
+    }
+  }
+});
+
+// DELETE: Reset all data (Wipes DB and Storage)
+app.delete("/api/reset", async (req, res) => {
+  try {
+    // 1. Wipe DB
+    await dbClient.query("TRUNCATE TABLE uploaded_files RESTART IDENTITY");
+
+    // 2. Wipe Local Folder
+    const files = await fs.promises.readdir(uploadDir);
+    for (const file of files) {
+      await fs.promises.unlink(path.join(uploadDir, file));
+    }
+
+    // 3. Wipe MinIO/S3 Bucket
+    const listedObjects = await s3Client.send(
+      new ListObjectsV2Command({ Bucket: bucketName }),
+    );
+    if (listedObjects.Contents) {
+      for (const object of listedObjects.Contents) {
+        await s3Client.send(
+          new DeleteObjectCommand({ Bucket: bucketName, Key: object.Key }),
+        );
+      }
+    }
+
+    res.json({ message: "System fully reset: Database and Storage wiped!" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Reset failed: " + err.message });
+  }
 });
 
 // --- 4. START SERVER ---
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Backend running on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Backend running on port ${PORT}`));
