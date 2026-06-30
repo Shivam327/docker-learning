@@ -1,11 +1,9 @@
-version: '3.8'
+version: "3.8"
 
 services:
   # The Bouncer: The only container exposed to the internet
   frontend:
-    build: 
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: shivamthaker369/docker-volume-frontend:latest
     ports:
       - "80:80"
     restart: always
@@ -13,9 +11,7 @@ services:
       - backend
 
   backend:
-    build: 
-      context: ./backend
-      dockerfile: Dockerfile
+    image: shivamthaker369/docker-volume-backend:latest
     # NO PORTS EXPOSED. Protected inside the Docker network.
     restart: always
     env_file:
