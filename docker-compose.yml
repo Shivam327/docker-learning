@@ -11,6 +11,7 @@ services:
       # These must match your service names in docker-compose.yml
       - BACKEND_HOST=backend
       - MINIO_HOST=minio
+    pull_policy: always
     depends_on:
       - backend
 
@@ -18,6 +19,7 @@ services:
     image: shivamthaker369/docker-volume-backend:latest
     # NO PORTS EXPOSED. Protected inside the Docker network.
     restart: always
+    pull_policy: always
     env_file:
       - .env
     environment:
@@ -38,6 +40,7 @@ services:
     image: postgres:15-alpine
     # NO PORTS EXPOSED. Protected inside the Docker network.
     restart: always
+    pull_policy: always
     env_file:
       - .env
     volumes:
@@ -52,6 +55,7 @@ services:
     image: minio/minio
     # NO PORTS EXPOSED. Nginx will route public traffic here securely.
     restart: always
+    pull_policy: always
     environment:
       - MINIO_ROOT_USER=${PROD_S3_KEY}
       - MINIO_ROOT_PASSWORD=${PROD_S3_SECRET}
