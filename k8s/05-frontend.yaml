@@ -1,0 +1,38 @@
+# 1. The Service (The "Front Desk")
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+      targetPort: 80
+---
+# 2. The Deployment (The "Factory")
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: shivamthaker369/docker-volume-frontend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          env:
+            - name: BACKEND_HOST
+              value: "backend-service.default.svc.cluster.local"
+            - name: MINIO_HOST
+              value: "minio-service.default.svc.cluster.local"

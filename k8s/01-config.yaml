@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  DB_HOST: "db-service"
+  DB_NAME: "demo_db" # Changed from "fileapp" to match .env
+  DB_PORT: "5432"
+  STORAGE_TYPE: "s3"
+  S3_ENDPOINT: "http://minio-service:9000"
+  S3_BUCKET: "uploads"
