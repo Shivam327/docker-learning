@@ -48,7 +48,7 @@ spec:
                   key: DB_PASSWORD
             - name: POSTGRES_DB
               valueFrom:
-                configMapRef:
+                configMapKeyRef:
                   name: app-config
                   key: DB_NAME
           volumeMounts:
@@ -59,6 +59,7 @@ spec:
         name: pgdata
       spec:
         accessModes: ["ReadWriteOnce"]
+        storageClassName: standard
         resources:
           requests:
             storage: 1Gi

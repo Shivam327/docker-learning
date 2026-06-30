@@ -27,7 +27,7 @@ spec:
       containers:
         - name: minio
           image: minio/minio
-          command: ["server", "/data"]
+          command: ["minio", "server", "/data"]
           ports:
             - containerPort: 9000
           env:
@@ -48,7 +48,8 @@ spec:
     - metadata:
         name: minio-data
       spec:
-        accessModes: [ "ReadWriteOnce" ]
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: standard # ADD THIS LINE
         resources:
           requests:
             storage: 2Gi

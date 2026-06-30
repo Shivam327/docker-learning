@@ -7,6 +7,10 @@ services:
     ports:
       - "80:80"
     restart: always
+    environment:
+      # These must match your service names in docker-compose.yml
+      - BACKEND_HOST=backend
+      - MINIO_HOST=minio
     depends_on:
       - backend
 

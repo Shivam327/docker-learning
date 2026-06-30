@@ -25,8 +25,8 @@ spec:
     spec:
       containers:
         - name: backend
-          image: my-backend-image:latest # Custom image name
-          imagePullPolicy: Never # Tells Minikube to use your local Docker image
+          image: shivamthaker369/docker-volume-backend:latest # Custom image name
+          imagePullPolicy: IfNotPresent # Tells Minikube to use your local Docker image
           ports:
             - containerPort: 3000
           envFrom:
